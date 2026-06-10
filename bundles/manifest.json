@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-18T00:00:00Z",
+  "bundles": {
+    "lai_bundle": {
+      "version": "v2.0.0",
+      "build_date": "2026-06-05",
+      "url": "https://github.com/bioedca/Yeliztli/releases/download/lai-bundle-v2.0.0/genomeinsight_lai_bundle_v2.0.0.tar.gz",
+      "sha256": "36abb5f2ed95011aff1227c894f52597ef5c31adb5a132fafdf0830eabf14bff",
+      "size_bytes": 1723731810,
+      "min_app_version": "0.2.0"
+    },
+    "vep_bundle": {
+      "comment": "G1 re-annotation trigger: version bumped to v3.0.0 to force is_sample_stale to re-flag every pre-existing sample (re-annotated through the corrected carriage/zygosity + F25/F15 engine). The CATALOG is unchanged, so url/sha256/size_bytes/build_date still point at the real bundle-v2.0.0 asset — the version intentionally leads the asset tag. Downloads keep working; recording v3.0.0 emits one advisory vep_bundle_metadata_version_mismatch (manifest v3.0.0 vs the asset's embedded v2.0.0), which is expected.",
+      "version": "v3.0.0",
+      "build_date": "2026-06-01",
+      "url": "https://github.com/bioedca/Yeliztli/releases/download/bundle-v2.0.0/vep_bundle.db",
+      "sha256": "9f645b2c6963e2a83e69c0b1e5bea777cb1bf20566d7c051cfda9b0fef6393bc",
+      "size_bytes": 358752256,
+      "min_app_version": "0.2.0"
+    },
+    "ancestry_pca": {
+      "version": "v1.0",
+      "build_date": "2026-04-07",
+      "url": "",
+      "sha256": "3593c24dd32f67e87fa4d58653621a5b5c6635bcce569ead909386c3139ddf58",
+      "size_bytes": 414432
+    },
+    "gnomad": {
+      "version": "v1.0.0",
+      "build_date": "2026-06-06",
+      "url": "https://github.com/bioedca/Yeliztli/releases/download/gnomad-bundle-v1.0.0/gnomad_af.db",
+      "sha256": "8518eb9ff105646b088e761c405e993f26127bcf05fd93d47c5eeef40579ad79",
+      "size_bytes": 1952698368,
+      "min_app_version": "0.2.0"
+    }
+  },
+  "pipeline_pins": {
+    "clinvar": {
+      "url": "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/clinvar.vcf.gz",
+      "last_known_version": ""
+    },
+    "dbnsfp": {
+      "url": "https://dist.genos.us/academic/e55b09/dbNSFP5.3.1a.zip",
+      "last_known_version": "5.3.1a"
+    },
+    "cpic": {
+      "url": "https://api.github.com/repos/cpicpgx/cpic-data/releases/latest",
+      "last_known_version": "v1.58.0"
+    },
+    "gwas_catalog": {
+      "url": "https://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/gwas-catalog-associations_ontology-annotated-full.zip",
+      "last_known_version": ""
+    },
+    "dbsnp": {
+      "url": "https://ftp.ncbi.nlm.nih.gov/snp/organisms/human_9606_b151_GRCh38p7/database/organism_data/RsMergeArch.bcp.gz",
+      "last_known_version": "b151"
+    },
+    "mondo_hpo": {
+      "url": "https://data.monarchinitiative.org/monarch-kg/latest/tsv/gene_associations/gene_disease.9606.tsv.gz",
+      "last_known_version": ""
+    }
+  }
+}

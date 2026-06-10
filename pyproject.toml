@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yeliztli"
+version = "0.2.0"
+description = "Personal genomics analysis platform for 23andMe raw data"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "bioedca", email = "bioedca@gmail.com" },
+]
+
+dependencies = [
+    "fastapi",
+    "starlette",
+    "python-multipart",
+    "uvicorn[standard]",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "huey",
+    "httpx",
+    "structlog",
+    "bcrypt",
+    "packaging",
+    "pyliftover",
+    "biopython",
+    "numpy",
+    "scipy",
+    "plotly",
+    "jinja2>=3.0",
+    "playwright>=1.40",
+    "pysam>=0.22",
+    "xgboost>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    # Pinned: ruff's formatter output can change across releases; an exact pin
+    # keeps `ruff format --check` deterministic between local and CI (bump
+    # intentionally + reformat the tree in the same PR).
+    "ruff==0.15.15",
+    "mypy",
+    "pyyaml",
+    "pandas",
+]
+
+[project.scripts]
+yeliztli-setup = "backend.installer:main"
+
+[project.urls]
+Homepage = "https://github.com/bioedca/Yeliztli"
+Repository = "https://github.com/bioedca/Yeliztli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "e2e: marks end-to-end tests",
+    "integration: marks integration tests",
+    "requires_java: marks tests that need a real Java runtime (skipped when unavailable)",
+    "requires_real_bundle: marks tests that need the real production LAI/VEP bundle on disk (skipped when absent; consumed by the nightly slow-tier workflow)",
+]

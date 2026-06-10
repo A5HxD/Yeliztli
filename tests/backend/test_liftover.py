@@ -1,0 +1,176 @@
+"""Tests for GRCh38 liftover integration (P4-19, T4-19).
+
+T4-19: pyliftover converts rs1801133 GRCh37 position to correct GRCh38 position.
+"""
+
+from __future__ import annotations
+
+import pyliftover.liftover
+import pytest
+
+from backend.ingestion import liftover as liftover_module
+from backend.ingestion.liftover import batch_convert, convert_coordinate, reset_liftover
+
+# ── Unit tests: convert_coordinate ────────────────────────────────────
+
+
+class TestConvertCoordinate:
+    """T4-19: Single coordinate conversion from GRCh37 to GRCh38."""
+
+    def test_rs1801133_mthfr(self) -> None:
+        """T4-19 core: rs1801133 (MTHFR C677T) on chr1 GRCh37 → GRCh38.
+
+        GRCh37 chr1:11856378 → GRCh38 chr1:11796321
+        (verified via UCSC liftOver and Ensembl)
+        """
+        result = convert_coordinate("1", 11856378)
+        assert result is not None
+        chrom, pos = result
+        assert chrom == "1"
+        # GRCh38 position for rs1801133
+        assert pos == 11796321
+
+    def test_rs429358_apoe(self) -> None:
+        """APOE rs429358 on chr19 lifts correctly."""
+        result = convert_coordinate("19", 44908684)
+        assert result is not None
+        chrom, pos = result
+        assert chrom == "19"
+        # GRCh38 position for rs429358
+        assert pos == 44404524
+
+    def test_rs7412_apoe(self) -> None:
+        """APOE rs7412 on chr19 lifts correctly."""
+        result = convert_coordinate("19", 44908822)
+        assert result is not None
+        chrom, pos = result
+        assert chrom == "19"
+        assert pos == 44404662
+
+    def test_x_chromosome(self) -> None:
+        """X chromosome coordinates lift correctly."""
+        result = convert_coordinate("X", 1000000)
+        assert result is not None
+        chrom, pos = result
+        assert chrom == "X"
+        assert pos == 1039265  # GRCh38 (1-based)
+
+    def test_mt_chromosome_returns_none(self) -> None:
+        """F34: MT/chrM must NOT lift — UCSC hg19 chrM is Yoruba, not rCRS.
+
+        The hg19→hg38 chain would emit wrong GRCh38 coordinates for
+        mitochondrial positions (rCRS ≠ UCSC-hg19-chrM), so ``convert_coordinate``
+        refuses to lift them rather than silently corrupting the position.
+        """
+        assert convert_coordinate("MT", 7028) is None
+        assert convert_coordinate("MT", 263) is None
+        # The ``chrM`` spelling is short-circuited identically to ``MT``.
+        assert convert_coordinate("chrM", 750) is None
+
+    def test_autosomal_still_lifts_after_mt_guard(self) -> None:
+        """The MT short-circuit must not regress autosomal/sex liftover."""
+        assert convert_coordinate("1", 11856378) == ("1", 11796321)
+        assert convert_coordinate("X", 1000000) == ("X", 1039265)
+
+    def test_chr_prefix_handled(self) -> None:
+        """Input with 'chr' prefix works the same as without."""
+        result_no_prefix = convert_coordinate("1", 11856378)
+        result_with_prefix = convert_coordinate("chr1", 11856378)
+        assert result_no_prefix is not None
+        assert result_with_prefix is not None
+        assert result_no_prefix == result_with_prefix
+
+    def test_returns_none_for_invalid_chrom(self) -> None:
+        """Invalid chromosome returns None."""
+        result = convert_coordinate("99", 100)
+        assert result is None
+
+
+# ── Unit tests: batch_convert ─────────────────────────────────────────
+
+
+class TestBatchConvert:
+    """Batch coordinate conversion."""
+
+    def test_batch_multiple_variants(self) -> None:
+        """Batch convert returns results for all variants."""
+        variants = [
+            ("rs1801133", "1", 11856378),
+            ("rs429358", "19", 44908684),
+            ("rs7412", "19", 44908822),
+        ]
+        results = batch_convert(variants)
+        assert len(results) == 3
+        assert results["rs1801133"] is not None
+        assert results["rs429358"] is not None
+        assert results["rs7412"] is not None
+
+    def test_batch_empty_list(self) -> None:
+        """Empty variant list returns empty dict."""
+        results = batch_convert([])
+        assert results == {}
+
+    def test_batch_preserves_rsid_keys(self) -> None:
+        """Result dict is keyed by rsid."""
+        variants = [("rs123", "1", 100000)]
+        results = batch_convert(variants)
+        assert "rs123" in results
+
+
+# ── Reset helper ──────────────────────────────────────────────────────
+
+
+class TestResetLiftover:
+    """Test the reset helper for test isolation."""
+
+    def test_reset_and_reinit(self) -> None:
+        """After reset, next call re-initialises the LiftOver instance."""
+        # Ensure it's loaded
+        result1 = convert_coordinate("1", 11856378)
+        assert result1 is not None
+
+        # Reset and convert again
+        reset_liftover()
+        result2 = convert_coordinate("1", 11856378)
+        assert result2 is not None
+        assert result1 == result2
+
+
+# ── Offline / no-network regression (CI flake fix) ────────────────────
+
+
+class TestVendoredChainOffline:
+    """The hg19→hg38 chain is vendored in-repo and loaded directly.
+
+    pyliftover's ``LiftOver("hg19", "hg38")`` would download the chain from
+    UCSC on first use, which made CI flaky when that fetch failed. These tests
+    guard that liftover uses the bundled file and never the network.
+    """
+
+    def test_vendored_chain_file_exists(self) -> None:
+        """The chain ships in the package so liftover works offline."""
+        assert liftover_module._CHAIN_PATH.exists(), (
+            f"vendored chain missing at {liftover_module._CHAIN_PATH}"
+        )
+
+    def test_no_network_download(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """convert_coordinate succeeds without pyliftover's UCSC download path.
+
+        ``open_liftover_chain_file`` is only reached by the from_db/to_db web
+        branch of ``LiftOver.__init__``; loading an explicit chain path skips
+        it. Making it raise proves the vendored file is used.
+        """
+
+        def _fail(*args: object, **kwargs: object) -> object:
+            raise AssertionError(
+                "liftover attempted a UCSC chain download instead of using the vendored file"
+            )
+
+        monkeypatch.setattr(pyliftover.liftover, "open_liftover_chain_file", _fail)
+        reset_liftover()
+        try:
+            result = convert_coordinate("1", 11856378)
+            assert result == ("1", 11796321)
+        finally:
+            # Drop the instance loaded under the patch so later tests reinit cleanly.
+            reset_liftover()

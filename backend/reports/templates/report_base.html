@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+{% from "_macros.html" import evidence_stars, clinvar_badge, pathway_badge, finding_card, module_section, toc_entry %}
+<style>
+  /* ── Page layout ──────────────────────────────────────── */
+  @page {
+    size: A4;
+    margin: 20mm 18mm 25mm 18mm;
+    @bottom-center {
+      content: counter(page) " of " counter(pages);
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 8pt;
+      color: #94A3B8;
+    }
+  }
+
+  /* ── Clinical typography ──────────────────────────────── */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.55;
+    color: #1E293B;
+    background: #FFFFFF;
+    font-feature-settings: "liga" 1, "calt" 1, "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+  }
+
+  /* ── Report header ────────────────────────────────────── */
+  .report-header {
+    text-align: center;
+    padding: 0 0 14px 0;
+    border-bottom: 2.5px solid #0D9488;
+    margin-bottom: 18px;
+  }
+
+  .report-header h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #0D9488;
+    margin-bottom: 3px;
+    letter-spacing: -0.4px;
+  }
+
+  .report-header .subtitle {
+    font-size: 12pt;
+    color: #475569;
+    font-weight: 500;
+  }
+
+  .report-header .meta {
+    font-size: 8pt;
+    color: #94A3B8;
+    margin-top: 6px;
+    letter-spacing: 0.2px;
+  }
+
+  .report-header .meta span {
+    margin: 0 4px;
+  }
+
+  /* ── Global disclaimer ────────────────────────────────── */
+  .global-disclaimer {
+    background: #FFF7ED;
+    border: 1px solid #FDBA74;
+    border-left: 4px solid #F97316;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 18px;
+    font-size: 8.5pt;
+    color: #9A3412;
+    line-height: 1.45;
+    page-break-inside: avoid;
+  }
+
+  .global-disclaimer strong {
+    display: block;
+    font-size: 9.5pt;
+    margin-bottom: 3px;
+    color: #7C2D12;
+  }
+
+  /* ── Table of contents ────────────────────────────────── */
+  .toc {
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    page-break-inside: avoid;
+  }
+
+  .toc-title {
+    font-size: 10pt;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  .toc-entry {
+    font-size: 9pt;
+    line-height: 1.7;
+    color: #475569;
+  }
+
+  .toc-number {
+    display: inline-block;
+    width: 18px;
+    color: #94A3B8;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toc-link {
+    color: #0D9488;
+    text-decoration: none;
+  }
+
+  .toc-count {
+    color: #94A3B8;
+    font-size: 8pt;
+    margin-left: 3px;
+  }
+
+  /* ── Module section ───────────────────────────────────── */
+  .module-section {
+    margin-bottom: 22px;
+    page-break-inside: avoid;
+  }
+
+  .module-header {
+    background: linear-gradient(135deg, #F0FDFA 0%, #ECFDF5 100%);
+    border-left: 4px solid #0D9488;
+    border-bottom: 1px solid #CCFBF1;
+    padding: 8px 14px;
+    margin-bottom: 10px;
+  }
+
+  .module-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .module-title {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #0F766E;
+    margin: 0;
+  }
+
+  .module-number {
+    color: #99F6E4;
+    font-weight: 700;
+    margin-right: 4px;
+  }
+
+  .module-count {
+    font-size: 8pt;
+    color: #5EEAD4;
+    background: #0F766E;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ── Module disclaimer ────────────────────────────────── */
+  .module-disclaimer {
+    display: flex;
+    gap: 8px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    font-size: 8pt;
+    color: #92400E;
+    line-height: 1.4;
+    page-break-inside: avoid;
+  }
+
+  .disclaimer-icon {
+    font-size: 12pt;
+    line-height: 1;
+    flex-shrink: 0;
+    color: #D97706;
+  }
+
+  .disclaimer-body strong {
+    display: block;
+    font-size: 8.5pt;
+    margin-bottom: 2px;
+    color: #78350F;
+  }
+
+  .disclaimer-body p {
+    margin: 0;
+  }
+
+  /* ── Finding card ─────────────────────────────────────── */
+  .finding-card {
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    page-break-inside: avoid;
+    border-left: 3px solid #CBD5E1;
+    background: #FFFFFF;
+  }
+
+  /* Evidence-level color coding on left border */
+  .finding-card--level-4 { border-left-color: #DC2626; }
+  .finding-card--level-3 { border-left-color: #F59E0B; }
+  .finding-card--level-2 { border-left-color: #3B82F6; }
+  .finding-card--level-1 { border-left-color: #94A3B8; }
+  .finding-card--level-0 { border-left-color: #E2E8F0; }
+
+  .finding-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+
+  .finding-card-identity {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .finding-card-evidence {
+    flex-shrink: 0;
+  }
+
+  .finding-gene {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0D9488;
+    font-style: italic;
+  }
+
+  .finding-rsid {
+    font-size: 8.5pt;
+    color: #64748B;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono",
+                 Menlo, Consolas, monospace;
+  }
+
+  .finding-text {
+    font-size: 9.5pt;
+    color: #334155;
+    margin-bottom: 5px;
+    line-height: 1.5;
+  }
+
+  /* ── Finding metadata ─────────────────────────────────── */
+  .finding-meta {
+    font-size: 8pt;
+    color: #64748B;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 5px;
+    border-top: 1px solid #F1F5F9;
+    margin-top: 5px;
+  }
+
+  .meta-item {
+    white-space: nowrap;
+  }
+
+  .meta-label {
+    font-weight: 600;
+    color: #475569;
+  }
+
+  /* ── Evidence stars ───────────────────────────────────── */
+  .evidence-stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    vertical-align: middle;
+  }
+
+  .star {
+    font-size: 11pt;
+    line-height: 1;
+  }
+
+  .star-filled {
+    color: #F59E0B;
+  }
+
+  .star-empty {
+    color: #E2E8F0;
+  }
+
+  .star-label {
+    font-size: 7pt;
+    color: #94A3B8;
+    margin-left: 3px;
+    font-weight: 500;
+  }
+
+  /* ── SVG container ────────────────────────────────────── */
+  .finding-svg {
+    margin: 6px 0;
+    text-align: center;
+    padding: 4px;
+    background: #F8FAFC;
+    border-radius: 4px;
+  }
+
+  .finding-svg svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* ── PMID citations ───────────────────────────────────── */
+  .pmid-list {
+    font-size: 7.5pt;
+    color: #64748B;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #F1F5F9;
+  }
+
+  .pmid-link {
+    color: #0D9488;
+    text-decoration: none;
+  }
+
+  .pmid-link:hover {
+    text-decoration: underline;
+  }
+
+  /* ── Badge styles ─────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    font-size: 7.5pt;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+  }
+
+  /* ClinVar badges */
+  .badge-pathogenic        { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .badge-likely-pathogenic  { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .badge-vus               { background: #E0E7FF; color: #3730A3; border: 1px solid #C7D2FE; }
+  .badge-likely-benign      { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+  .badge-benign            { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+
+  /* Pathway level badges */
+  .badge-elevated  { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .badge-moderate  { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .badge-standard  { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+
+  /* ── Summary statistics bar ───────────────────────────── */
+  .summary-bar {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    page-break-inside: avoid;
+  }
+
+  .summary-stat {
+    text-align: center;
+  }
+
+  .summary-stat-value {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #0D9488;
+    display: block;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary-stat-label {
+    font-size: 7.5pt;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* ── Footer ───────────────────────────────────────────── */
+  .report-footer {
+    margin-top: 28px;
+    padding-top: 10px;
+    border-top: 1px solid #E2E8F0;
+    font-size: 8pt;
+    color: #94A3B8;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+
+  .report-footer .footer-brand {
+    font-weight: 600;
+    color: #64748B;
+    margin-bottom: 4px;
+  }
+
+  .report-footer .disclaimer-footer {
+    font-size: 7pt;
+    color: #94A3B8;
+    line-height: 1.4;
+    max-width: 480px;
+    margin: 4px auto 0;
+  }
+
+  /* ── Print overrides ──────────────────────────────────── */
+  @media print {
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color-adjust: exact;
+    }
+
+    /* Force evidence star colors in print */
+    .star-filled {
+      color: #F59E0B !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .star-empty {
+      color: #E2E8F0 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Force badge colors in print */
+    .badge {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Force finding card left borders in print */
+    .finding-card {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Force module header background in print */
+    .module-header {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Page break management */
+    .module-section {
+      page-break-inside: avoid;
+    }
+
+    .finding-card {
+      page-break-inside: avoid;
+    }
+
+    .global-disclaimer {
+      page-break-inside: avoid;
+    }
+
+    .module-disclaimer {
+      page-break-inside: avoid;
+    }
+
+    /* Allow page breaks between module sections */
+    .module-section + .module-section {
+      page-break-before: auto;
+    }
+
+    /* Suppress link URLs in print */
+    a[href]::after {
+      content: none !important;
+    }
+
+    /* Ensure SVGs print with color */
+    .finding-svg svg {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Report Header -->
+<div class="report-header">
+  <h1>{{ title }}</h1>
+  <div class="subtitle">{{ sample_name }}</div>
+  <div class="meta">
+    <span>Generated {{ generated_at }}</span>
+    <span>&bull;</span>
+    <span>Yeliztli v{{ version }}</span>
+  </div>
+</div>
+
+<!-- Global disclaimer -->
+<div class="global-disclaimer">
+  <strong>Important Disclaimer</strong>
+  This report is generated by Yeliztli for educational and research purposes only.
+  It is NOT a medical device and has NOT been reviewed or approved by the FDA or any
+  regulatory authority. Consult a qualified healthcare provider or certified genetic
+  counselor before making any medical decisions based on genetic information.
+</div>
+
+<!-- Summary statistics -->
+{% if sections %}
+<div class="summary-bar">
+  <div class="summary-stat">
+    <span class="summary-stat-value">{{ sections | length }}</span>
+    <span class="summary-stat-label">Modules</span>
+  </div>
+  <div class="summary-stat">
+    <span class="summary-stat-value">{{ total_findings }}</span>
+    <span class="summary-stat-label">Findings</span>
+  </div>
+  <div class="summary-stat">
+    <span class="summary-stat-value">{{ high_evidence_count }}</span>
+    <span class="summary-stat-label">High Evidence</span>
+  </div>
+</div>
+
+<!-- Table of contents -->
+{% if sections | length > 1 %}
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  {% for section in sections %}
+    {{ toc_entry(section, loop.index) }}
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Module sections -->
+{% for section in sections %}
+  {{ module_section(section, loop.index) }}
+{% endfor %}
+
+<!-- Footer -->
+<div class="report-footer">
+  <div class="footer-brand">Yeliztli &mdash; Personal Genomics Analysis Platform</div>
+  <div class="disclaimer-footer">
+    This report is for educational and research purposes only. Not a substitute for
+    professional medical advice. Genetic variant classifications may change as scientific
+    understanding evolves. Consumer genotyping chips test only a subset of variants.
+  </div>
+</div>
+
+</body>
+</html>
