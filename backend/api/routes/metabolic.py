@@ -81,7 +81,8 @@ class MetabolicAnchorResponse(BaseModel):
     rsid: str
     effect_allele: str
     genotype: str | None = None
-    dosage: int = 0
+    dosage: int | None = 0
+    indeterminate: bool = False
     summary: str = ""
     evidence_level: int = 2
     pmids: list[str] = []
@@ -209,7 +210,8 @@ def list_metabolic_anchors(
                 rsid=d.get("rsid", row.rsid or ""),
                 effect_allele=d.get("effect_allele", ""),
                 genotype=d.get("genotype"),
-                dosage=d.get("dosage", 0),
+                dosage=d.get("dosage"),
+                indeterminate=d.get("indeterminate", False),
                 summary=d.get("summary", ""),
                 evidence_level=row.evidence_level or 2,
                 pmids=pmids,
@@ -238,7 +240,7 @@ def run_metabolic_analysis(
         if pgs_engine is not None:
             pgs_engine.dispose()
 
-    typed_anchors = sum(1 for a in result.anchors if a.genotype is not None)
+    typed_anchors = sum(1 for a in result.anchors if a.reportable)
     return MetabolicRunResponse(
         findings_count=count,
         prs_traits_computed=len(result.prs_results),
