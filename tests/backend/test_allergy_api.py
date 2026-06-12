@@ -35,6 +35,12 @@ from backend.db.tables import (
 
 # ── Test data ────────────────────────────────────────────────────────
 
+HLA_B5801_NEGATIVE_PROXY_CAVEAT = (
+    "No HLA-B*58:01 tag-SNP allele was detected at rs9263726, but this proxy result "
+    "does not exclude the HLA allele. Proxy LD varies by ancestry; use high-resolution "
+    "HLA typing for clinical allopurinol decisions."
+)
+
 PATHWAY_SUMMARY_FINDINGS = [
     {
         "module": "allergy",
@@ -92,9 +98,9 @@ PATHWAY_SUMMARY_FINDINGS = [
         "detail_json": json.dumps(
             {
                 "pathway_id": "drug_hypersensitivity",
-                "called_snps": 1,
+                "called_snps": 2,
                 "total_snps": 4,
-                "missing_snps": ["rs144012689", "rs1061235", "rs9263726"],
+                "missing_snps": ["rs144012689", "rs1061235"],
                 "snp_details": [
                     {
                         "rsid": "rs2395029",
@@ -110,6 +116,39 @@ PATHWAY_SUMMARY_FINDINGS = [
                             "clinical_grade": True,
                             "confirmatory_test_required": True,
                         },
+                        "hla_proxy_lookup": {
+                            "hla_allele": "HLA-B*57:01",
+                            "r_squared_by_pop": {"EUR": 0.97, "AFR": 0.85},
+                            "clinical_context": "Abacavir hypersensitivity",
+                        },
+                        "hla_proxy_caveat": "Confirmatory HLA typing required.",
+                        "coverage_note": None,
+                    },
+                    {
+                        "rsid": "rs9263726",
+                        "gene": "HLA-B",
+                        "variant_name": "HLA-B*58:01 proxy",
+                        "genotype": "CC",
+                        "category": "Standard",
+                        "effect_summary": (
+                            "No rs9263726 HLA-B*58:01 proxy allele detected. "
+                            "This tag-SNP result does not rule out HLA-B*58:01."
+                        ),
+                        "evidence_level": 4,
+                        "hla_proxy": {
+                            "hla_allele": "HLA-B*58:01",
+                            "r_squared_eur": 0.91,
+                            "r_squared_eas": 0.87,
+                            "r_squared_afr": 0.78,
+                            "clinical_grade": False,
+                            "confirmatory_test_required": True,
+                        },
+                        "hla_proxy_lookup": {
+                            "hla_allele": "HLA-B*58:01",
+                            "r_squared_by_pop": {"EUR": 0.91, "EAS": 0.87, "AFR": 0.78},
+                            "clinical_context": "Allopurinol hypersensitivity (SJS/TEN)",
+                        },
+                        "hla_proxy_caveat": HLA_B5801_NEGATIVE_PROXY_CAVEAT,
                         "coverage_note": None,
                     },
                 ],
@@ -118,7 +157,12 @@ PATHWAY_SUMMARY_FINDINGS = [
                         "hla_allele": "HLA-B*57:01",
                         "r_squared_by_pop": {"EUR": 0.97, "AFR": 0.85},
                         "clinical_context": "Abacavir hypersensitivity",
-                    }
+                    },
+                    "rs9263726": {
+                        "hla_allele": "HLA-B*58:01",
+                        "r_squared_by_pop": {"EUR": 0.91, "EAS": 0.87, "AFR": 0.78},
+                        "clinical_context": "Allopurinol hypersensitivity (SJS/TEN)",
+                    },
                 },
             }
         ),
@@ -404,6 +448,12 @@ class TestPathwayDetail:
         data = resp.json()
         assert data["level"] == "Elevated"
         assert data["hla_proxy_lookup"] is not None
+        hla_b5701_detail = next(d for d in data["snp_details"] if d["rsid"] == "rs2395029")
+        assert hla_b5701_detail["hla_proxy_lookup"]["r_squared_by_pop"]["AFR"] == 0.85
+        assert hla_b5701_detail["hla_proxy_caveat"] == "Confirmatory HLA typing required."
+        hla_b5801_detail = next(d for d in data["snp_details"] if d["rsid"] == "rs9263726")
+        assert hla_b5801_detail["hla_proxy_caveat"] == HLA_B5801_NEGATIVE_PROXY_CAVEAT
+        assert hla_b5801_detail["hla_proxy_lookup"]["r_squared_by_pop"]["AFR"] == 0.78
 
     def test_missing_pathway_404(self, seeded_client: TestClient) -> None:
         resp = seeded_client.get("/api/analysis/allergy/pathway/nonexistent?sample_id=1")

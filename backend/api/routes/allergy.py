@@ -50,6 +50,7 @@ class SNPDetail(BaseModel):
     pmids: list[str] = []
     hla_proxy: dict | None = None
     hla_proxy_lookup: dict | None = None
+    hla_proxy_caveat: str | None = None
     coverage_note: str | None = None
 
 
@@ -346,6 +347,8 @@ def pathway_detail(
         snp_finding_detail = snp_finding.get("detail", {})
         recommendation = snp_finding_detail.get("recommendation")
         pmids = snp_finding.get("pmids", [])
+        hla_proxy_lookup = snp_finding_detail.get("hla_proxy_lookup") or sd.get("hla_proxy_lookup")
+        hla_proxy_caveat = snp_finding_detail.get("hla_proxy_caveat") or sd.get("hla_proxy_caveat")
 
         snp_details.append(
             SNPDetail(
@@ -359,7 +362,8 @@ def pathway_detail(
                 recommendation=recommendation,
                 pmids=pmids,
                 hla_proxy=sd.get("hla_proxy"),
-                hla_proxy_lookup=snp_finding_detail.get("hla_proxy_lookup"),
+                hla_proxy_lookup=hla_proxy_lookup,
+                hla_proxy_caveat=hla_proxy_caveat,
                 coverage_note=sd.get("coverage_note"),
             )
         )
