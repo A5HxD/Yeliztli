@@ -94,6 +94,12 @@ CAVEAT_REGISTRY: dict[str, str] = {
         "deficiency: rare null and other deficiency alleles (e.g. Pi*null, Pi*Mmalton) "
         "are not interrogated by the array."
     ),
+    "aat_pisz_phase_inferred": (
+        "PiSZ requires the S and Z variants to be on opposite chromosomes. This "
+        "SNP-array result observes both variants but is unphased, so it cannot "
+        "prove they are in trans; confirm with serum AAT plus phenotype or targeted "
+        "SERPINA1 sequencing before treating it as definitive PiSZ."
+    ),
     "apol1_recessive": (
         "APOL1 kidney risk is recessive: two risk alleles (any combination of G1 "
         "and G2) are required. Carrying one risk allele does not raise risk."
@@ -210,6 +216,11 @@ class GenotypeModel:
     # Block: {risk_classification, evidence_stars, finding_text}. Never asserts
     # low-risk — it states the genotype is indeterminate / partial.
     partial_disclosure: dict[str, Any] | None = None
+    # Marks models whose biological interpretation depends on phase that SNP-array
+    # genotypes do not directly establish, while still detecting the observed
+    # variant combination.
+    phase_inferred: bool = False
+    confidence_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -334,6 +345,23 @@ def load_risk_panel(path: str | Path) -> RiskPanel:
             )
         if modifier is not None:
             _validate_pmids(data["module"], m["id"], "modifier.pmids", modifier.get("pmids", []))
+        phase_inferred = m.get("phase_inferred", False)
+        confidence_note = m.get("confidence_note")
+        if not isinstance(phase_inferred, bool):
+            raise ValueError(
+                f"Panel '{data['module']}' model '{m['id']}' field "
+                f"'phase_inferred' must be a boolean."
+            )
+        if confidence_note is not None and not isinstance(confidence_note, str):
+            raise ValueError(
+                f"Panel '{data['module']}' model '{m['id']}' field "
+                f"'confidence_note' must be a string."
+            )
+        if phase_inferred and not (confidence_note and confidence_note.strip()):
+            raise ValueError(
+                f"Panel '{data['module']}' model '{m['id']}' declares "
+                f"phase_inferred without a confidence_note."
+            )
         models.append(
             GenotypeModel(
                 id=m["id"],
@@ -352,6 +380,8 @@ def load_risk_panel(path: str | Path) -> RiskPanel:
                 recessive=m.get("recessive", False),
                 modifier=modifier,
                 partial_disclosure=m.get("partial_disclosure"),
+                phase_inferred=phase_inferred,
+                confidence_note=confidence_note,
             )
         )
 
@@ -594,6 +624,10 @@ def _render_finding(
         "sex_used": sex,
         "recessive": model.recessive,
     }
+    if model.phase_inferred:
+        detail["phase_inferred"] = True
+        detail["call_confidence"] = "Partial"
+        detail["confidence_note"] = model.confidence_note
 
     return RiskCall(
         model_id=model.id,
