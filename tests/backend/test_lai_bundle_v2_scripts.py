@@ -66,9 +66,9 @@ EXPECTED_HELPERS = [
 ]
 
 
-# v1.1 hardcoded path that scripts MUST NOT bake in. The dispatcher should
-# accept it via env override only.
-_V1_HARDCODED_PATH = re.compile(r"/exports/people/mondragonlab/ecc1695/lai_bundle/(?!v2)")
+# Hardcoded private shared-filesystem roots that scripts MUST NOT bake in. The
+# dispatcher should accept concrete build paths via env override only.
+_PRIVATE_SHARED_ROOT = re.compile(r"/exports(?:/|$)")
 _HOME_LAI_BUNDLE_V1_HARDCODED = re.compile(r"\$HOME/lai_bundle(?!_v2)\b|~/lai_bundle(?!_v2)\b")
 
 
@@ -128,8 +128,8 @@ class TestNoV11PathLeak:
     )
     def test_no_hardcoded_v1_cluster_path(self, name: str) -> None:
         text = (SCRIPTS_DIR / name).read_text()
-        assert not _V1_HARDCODED_PATH.search(text), (
-            f"{name} hardcodes the v1.1 cluster path; parametrize via env.sh instead"
+        assert not _PRIVATE_SHARED_ROOT.search(text), (
+            f"{name} hardcodes a private shared-filesystem path; parametrize via env.sh instead"
         )
 
     @pytest.mark.parametrize(
@@ -604,14 +604,16 @@ class TestRunbook:
         # Plan §6.3 step 1 mandates an rsync section.
         assert "rsync" in text.lower()
         assert "scripts/lai_bundle_v2" in text
-        assert "two:~/lai_bundle_v2/scripts/" in text
+        assert "LAI_BUILD_HOST" in text
+        assert "${LAI_BUILD_HOST}:${LAI_WORKDIR%/}/scripts/" in text
 
     def test_runbook_calls_out_v2_paths(self) -> None:
         text = RUNBOOK.read_text()
-        # Both v1.1 (reference) and v2.0.0 working dirs must be named so the
-        # operator can't confuse the two.
-        assert "/exports/people/mondragonlab/ecc1695/lai_bundle_v2/" in text
-        assert "/exports/people/mondragonlab/ecc1695/lai_bundle/" in text
+        # Both v1.1 (reference) and v2.0.0 working dirs must be operator-supplied
+        # so the repo does not leak a private build-host path.
+        assert "$LAI_V1_WORKDIR" in text
+        assert "$LAI_WORKDIR" in text
+        assert not _PRIVATE_SHARED_ROOT.search(text)
 
     def test_runbook_lists_bio_validator_targets(self) -> None:
         text = RUNBOOK.read_text()
