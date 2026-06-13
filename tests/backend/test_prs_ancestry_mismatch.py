@@ -740,3 +740,103 @@ class TestGetTopAncestryFraction:
 
         result = get_top_ancestry_fraction(sample_engine)
         assert result == pytest.approx(0.65)
+
+
+class TestMultiAncestryProvenanceWarning:
+    """Multi-ancestry score provenance wording (issue #239).
+
+    For a multi-ancestry score whose development set does not include the
+    user's inferred ancestry (e.g. the MID / OCE buckets), the warning must
+    describe it as a multi-ancestry score listing its development ancestries,
+    not assert a single 'AFR population study'.
+    """
+
+    def _multi_result(self, source_ancestry: str = "AFR") -> PRSResult:
+        return PRSResult(
+            weight_set_name="BMI (multi-ancestry)",
+            trait="body_mass_index",
+            module="traits",
+            source_ancestry=source_ancestry,
+            source_study="Multi 2023",
+            source_pmid="1",
+            sample_size=100000,
+            raw_score=0.5,
+            multi_ancestry=True,
+            development_ancestries=["AFR", "AMR", "EAS", "EUR", "SAS"],
+        )
+
+    def test_multi_ancestry_mid_not_single_ancestry(self) -> None:
+        result = check_ancestry_mismatch(self._multi_result(), inferred_ancestry="MID")
+        assert result.ancestry_mismatch is True  # uncovered bucket still flags
+        text = result.ancestry_warning_text
+        assert text is not None
+        # Must describe the score as multi-ancestry and list the dev ancestries…
+        assert "multiple ancestries" in text
+        assert "AFR, AMR, EAS, EUR, SAS" in text
+        assert "MID" in text
+        # …and must NOT misrepresent it as a single-ancestry "population study".
+        assert "population study" not in text
+
+    def test_multi_ancestry_oce_not_single_ancestry(self) -> None:
+        result = check_ancestry_mismatch(self._multi_result(), inferred_ancestry="OCE")
+        text = result.ancestry_warning_text
+        assert text is not None
+        assert "multiple ancestries" in text and "population study" not in text
+        assert "OCE" in text
+
+    def test_multi_ancestry_uninferred_lists_dev_ancestries(self) -> None:
+        result = check_ancestry_mismatch(self._multi_result(), inferred_ancestry=None)
+        text = result.ancestry_warning_text
+        assert text is not None
+        assert "development ancestries" in text
+        assert "AFR, AMR, EAS, EUR, SAS" in text
+        assert "population study" not in text
+
+    def test_multi_ancestry_covered_ancestry_no_false_warning(self) -> None:
+        # A covered ancestry literally present in the development set must NOT be
+        # flagged even when its label differs from ancestries[0] (the resolved
+        # source label) — guards CodeRabbit's direct-construction case (#239).
+        result = check_ancestry_mismatch(self._multi_result(), inferred_ancestry="EAS")
+        assert result.ancestry_mismatch is False
+        assert result.ancestry_warning_text is None
+
+    def test_multi_ancestry_csa_sas_alias_no_false_warning(self) -> None:
+        # CSA (app label for Central/South Asian) is covered by a SAS-labelled
+        # development set via the CSA→SAS alias. _resolve_source_ancestry returns
+        # "CSA" (covered), so source==inferred and no warning must fire — even
+        # though "CSA" is not literally in development_ancestries (#239 review).
+        covered = PRSResult(
+            weight_set_name="BMI (multi-ancestry)",
+            trait="body_mass_index",
+            module="traits",
+            source_ancestry="CSA",  # resolved label for a covered CSA sample
+            source_study="Multi 2023",
+            source_pmid="1",
+            sample_size=100000,
+            raw_score=0.5,
+            multi_ancestry=True,
+            development_ancestries=["AFR", "AMR", "EAS", "EUR", "SAS"],
+        )
+        result = check_ancestry_mismatch(covered, inferred_ancestry="CSA")
+        assert result.ancestry_mismatch is False
+        assert result.ancestry_warning_text is None
+
+    def test_single_ancestry_wording_is_grammatical(self) -> None:
+        # A genuine single-ancestry score keeps the "single-ancestry (...) population
+        # study" wording (no fragile "a/an {CODE}" article logic).
+        single = PRSResult(
+            weight_set_name="T2D (EAS)",
+            trait="t2d",
+            module="metabolic",
+            source_ancestry="EAS",
+            source_study="x",
+            source_pmid="1",
+            sample_size=100,
+            raw_score=0.0,
+        )
+        result = check_ancestry_mismatch(single, inferred_ancestry="EUR")
+        text = result.ancestry_warning_text
+        assert text is not None
+        assert "single-ancestry (EAS) population study" in text
+        assert "multiple ancestries" not in text
+        assert "a EAS" not in text and "a AFR" not in text  # no ungrammatical article

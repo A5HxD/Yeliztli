@@ -158,6 +158,14 @@ class PRSWeightSet:
     # A percentile here reflects common-variant burden only; carriers of a
     # monogenic finding in one of these genes are cross-referenced at runtime.
     monogenic_genes: list[str] = field(default_factory=list)
+    # ── Development-ancestry provenance (issue #239) ────────────────────
+    # Whether the source score was developed across multiple ancestries, and
+    # its full development-ancestry set. Used so the ancestry-mismatch warning
+    # describes a multi-ancestry score accurately (rather than naming a single
+    # population) when the user's inferred ancestry is not in its development
+    # set. Defaults preserve historical single-ancestry behaviour.
+    multi_ancestry: bool = False
+    development_ancestries: list[str] = field(default_factory=list)
 
     @property
     def snp_count(self) -> int:
@@ -243,6 +251,10 @@ class PRSResult:
     bootstrap_iterations: int = 0
     ancestry_mismatch: bool = False
     ancestry_warning_text: str | None = None
+    # Development-ancestry provenance, threaded from the weight set so the
+    # mismatch warning can phrase a multi-ancestry score correctly (issue #239).
+    multi_ancestry: bool = False
+    development_ancestries: list[str] = field(default_factory=list)
     evidence_level: int = PRS_EVIDENCE_LEVEL  # PRS components = ★☆☆☆
     # False → no validated reference distribution for this score, so percentile,
     # z-score and bootstrap CI are deliberately withheld (left None). See #7.
@@ -491,6 +503,8 @@ def compute_prs(
         trait=weight_set.trait,
         module=weight_set.module,
         source_ancestry=weight_set.source_ancestry,
+        multi_ancestry=weight_set.multi_ancestry,
+        development_ancestries=list(weight_set.development_ancestries),
         source_study=weight_set.source_study,
         source_pmid=weight_set.source_pmid,
         sample_size=weight_set.sample_size,
@@ -673,26 +687,65 @@ def check_ancestry_mismatch(
     Returns:
         Updated PRSResult with ancestry_mismatch and ancestry_warning_text.
     """
+    # A multi-ancestry score is described by its full development-ancestry set,
+    # not a single population label, so the warning does not misrepresent a
+    # cross-ancestry-trained score as single-ancestry (issue #239).
+    is_multi = result.multi_ancestry and bool(result.development_ancestries)
+
     if inferred_ancestry is None:
         result.ancestry_mismatch = False
-        result.ancestry_warning_text = (
-            "Ancestry inference has not been run. PRS accuracy depends on "
-            "the match between your ancestry and the study population "
-            f"({result.source_ancestry})."
-        )
+        if is_multi:
+            dev = ", ".join(result.development_ancestries)
+            result.ancestry_warning_text = (
+                "Ancestry inference has not been run. PRS accuracy depends on the "
+                "match between your ancestry and the score's development ancestries "
+                f"({dev})."
+            )
+        else:
+            result.ancestry_warning_text = (
+                "Ancestry inference has not been run. PRS accuracy depends on "
+                "the match between your ancestry and the study population "
+                f"({result.source_ancestry})."
+            )
         return result
 
     source = result.source_ancestry.upper()
     inferred = inferred_ancestry.upper()
 
-    if source != inferred:
+    # For a multi-ancestry score, flag a mismatch only when the inferred
+    # ancestry is genuinely uncovered. Two complementary checks are required:
+    #   - source != inferred: source_ancestry is the alias-aware *resolved*
+    #     label (``_resolve_source_ancestry`` returns the inferred ancestry when
+    #     the score covers it, including via the CSA→SAS alias), so equality
+    #     means covered — this keeps a covered CSA user off the warning even
+    #     though "CSA" is not literally in the SAS-labelled development set.
+    #   - inferred not in development set: guards a directly-constructed result
+    #     whose source label was not resolved through ``_resolve_source_ancestry``
+    #     but whose inferred ancestry is literally a development ancestry.
+    # Requiring both keeps the "none matching" wording truthful (issue #239 +
+    # review). Single-ancestry scores keep the direct comparison.
+    if is_multi:
+        dev_upper = {a.upper() for a in result.development_ancestries}
+        mismatch = source != inferred and inferred not in dev_upper
+    else:
+        mismatch = source != inferred
+
+    if mismatch:
         result.ancestry_mismatch = True
-        result.ancestry_warning_text = (
-            f"This PRS was derived from a {result.source_ancestry} population study. "
-            f"Your inferred ancestry ({inferred_ancestry}) differs from the source "
-            f"population. Percentile estimates may be less accurate for your "
-            f"genetic background."
-        )
+        if is_multi:
+            dev = ", ".join(result.development_ancestries)
+            result.ancestry_warning_text = (
+                f"This PRS was developed across multiple ancestries ({dev}), none "
+                f"matching your inferred ancestry ({inferred_ancestry}). Percentile "
+                f"estimates may be less accurate for your genetic background."
+            )
+        else:
+            result.ancestry_warning_text = (
+                f"This PRS was derived from a single-ancestry ({result.source_ancestry}) "
+                f"population study. Your inferred ancestry ({inferred_ancestry}) differs "
+                f"from the source population. Percentile estimates may be less accurate "
+                f"for your genetic background."
+            )
     else:
         result.ancestry_mismatch = False
         result.ancestry_warning_text = None
