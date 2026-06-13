@@ -196,40 +196,6 @@ def _make_filename(ext: str) -> str:
 # ── Streaming generators ─────────────────────────────────────────────
 
 
-def _stream_csv(rows: list[dict[str, Any]], delimiter: str = ","):
-    """Yield CSV/TSV content from a list of dicts."""
-    if not rows:
-        # Empty result — yield just headers from annotated_variants columns
-        fieldnames = [col.name for col in annotated_variants.columns]
-        buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=delimiter)
-        writer.writeheader()
-        yield buf.getvalue()
-        return
-
-    fieldnames = list(rows[0].keys())
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=delimiter)
-    writer.writeheader()
-    yield buf.getvalue()
-
-    for row in rows:
-        buf.seek(0)
-        buf.truncate()
-        writer.writerow(row)
-        yield buf.getvalue()
-
-
-def _stream_json(rows: list[dict[str, Any]]):
-    """Yield JSON array content from a list of dicts."""
-    yield "["
-    for i, row in enumerate(rows):
-        if i > 0:
-            yield ","
-        yield json.dumps(row, default=str)
-    yield "]"
-
-
 def _stream_csv_from_columns(
     columns: list[str],
     rows: list[list[Any]],
