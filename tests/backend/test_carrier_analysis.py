@@ -26,6 +26,7 @@ from backend.analysis.carrier_status import (
     CarrierPanel,
     CarrierVariantResult,
     _assign_carrier_evidence_level,
+    _carrier_finding_text,
     extract_carrier_variants,
     load_carrier_panel,
     store_carrier_findings,
@@ -550,6 +551,55 @@ class TestStoreCarrierFindings:
         assert "carry one copy" in row.finding_text
         assert "family planning" in row.finding_text
         assert "typically unaffected" in row.finding_text
+
+    def test_hbb_hbs_finding_text_uses_trait_specific_context(
+        self, panel: CarrierPanel, sample_with_carrier_variants: sa.Engine
+    ) -> None:
+        """HBB HbS carrier text must not overstate carrier status as unaffected."""
+        result = extract_carrier_variants(panel, sample_with_carrier_variants)
+        store_carrier_findings(result, sample_with_carrier_variants)
+
+        with sample_with_carrier_variants.connect() as conn:
+            row = conn.execute(sa.select(findings).where(findings.c.rsid == "rs334")).fetchone()
+        assert row is not None
+        assert row.category == "autosomal_recessive_carrier"
+        assert "HBB" in row.finding_text
+        assert "rs334" in row.finding_text
+        assert "sickle-cell trait" in row.finding_text
+        assert "not sickle-cell disease" in row.finding_text
+        assert "usually asymptomatic" in row.finding_text
+        assert "kidney" in row.finding_text
+        assert "exertional-stress" in row.finding_text
+        assert "family planning" in row.finding_text
+        assert "typically unaffected" not in row.finding_text
+
+        pmids = json.loads(row.pmid_citations)
+        assert "30383109" in pmids
+        assert "25393378" in pmids
+
+    def test_hbb_hbs_finding_text_normalizes_rsid(self) -> None:
+        """HBB HbS trait wording should tolerate casing and whitespace in rsid."""
+        variant = CarrierVariantResult(
+            rsid=" RS334 ",
+            gene_symbol="HBB",
+            genotype="AT",
+            zygosity="het",
+            clinvar_significance="Likely pathogenic",
+            clinvar_review_stars=2,
+            clinvar_accession="VCV000015333",
+            clinvar_conditions="Sickle cell disease",
+            conditions=["Sickle Cell Disease"],
+            inheritance="AR",
+            evidence_level=4,
+            cross_links=[],
+            pmids=["30383109", "25393378"],
+            notes="Synthetic HBB HbS carrier-panel example.",
+        )
+
+        text = _carrier_finding_text(variant)
+
+        assert "sickle-cell trait" in text
+        assert "typically unaffected" not in text
 
     def test_brca_finding_text_uses_dual_role_framing(
         self, panel: CarrierPanel, sample_with_carrier_variants: sa.Engine
