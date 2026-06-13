@@ -1,9 +1,25 @@
 /** Setup wizard types. */
 
+/** How a database is provisioned (matches backend DatabaseInfo.build_mode). */
+export type BuildMode = 'pipeline' | 'download' | 'manual' | 'bundled'
+
+/** Health/readiness of one database that gates the dashboard. */
+export interface DbReadiness {
+  name: string
+  /** Mirrors backend DatabaseHealth.state (ready | partial | corrupt | …). */
+  state: string
+  ready: boolean
+  build_mode: BuildMode
+}
+
 export interface SetupStatus {
   needs_setup: boolean
   disclaimer_accepted: boolean
   has_databases: boolean
+  /** True only when every required, downloadable DB is integrity-`ready`. */
+  required_dbs_ready: boolean
+  /** Per-DB readiness for the required, downloadable gate set. */
+  db_readiness: DbReadiness[]
   has_samples: boolean
   data_dir: string
 }
@@ -81,7 +97,7 @@ export interface DatabaseStatus {
   phase: number
   downloaded: boolean
   file_size_bytes: number | null
-  build_mode: 'pipeline' | 'download' | 'manual' | 'bundled'
+  build_mode: BuildMode
 }
 
 export interface DatabaseListResult {
