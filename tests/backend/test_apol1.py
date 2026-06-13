@@ -13,6 +13,7 @@ write clinvar_significance=NULL.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -397,3 +398,52 @@ class TestG2AliasResolution:
         readouts = read_genotypes(panel, sample_engine)
         assert readouts["rs71785313"].status == PROBE_TYPED
         assert readouts["rs71785313"].genotype == "DD"
+
+
+class TestMonoallelicWording:
+    """#313: APOL1 single-risk-allele wording must not claim zero risk, in light
+    of monoallelic CKD/FSGS evidence (Gbadegesin et al., NEJM 2025). Two risk
+    alleles remain the established high-risk genotype."""
+
+    def test_disclaimer_does_not_claim_single_allele_zero_risk(self) -> None:
+        from backend.disclaimers import APOL1_DISCLAIMER_TEXT
+
+        text = APOL1_DISCLAIMER_TEXT.lower()
+        assert "does not raise risk" not in text
+        assert "monoallelic" in text
+        assert "gbadegesin" in text
+        # The two-risk-allele high-risk framing is retained.
+        assert "two risk alleles" in text
+
+    def test_recessive_caveat_softened(self) -> None:
+        from backend.analysis.risk_genotype import CAVEAT_REGISTRY
+
+        caveat = CAVEAT_REGISTRY["apol1_recessive"].lower()
+        assert "does not raise risk" not in caveat
+        assert "monoallelic" in caveat
+        assert "not zero risk" in caveat
+        assert "high-risk genotype" in caveat
+
+    def test_partial_disclosure_not_called_low_risk(self) -> None:
+        # The partial (one-typed-allele, second-untyped) disclosure must not call a
+        # single-risk-allele genotype "low-risk", and must carry the monoallelic
+        # caveat. Read the curated panel JSON and assert on the specific
+        # partial_disclosure finding_text field(s) rather than a serialized blob.
+        panel_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "backend"
+            / "data"
+            / "panels"
+            / "apol1_panel.json"
+        )
+        data = json.loads(panel_path.read_text(encoding="utf-8"))
+        texts = [
+            gm["partial_disclosure"]["finding_text"]
+            for gm in data["genotype_models"]
+            if "partial_disclosure" in gm
+        ]
+        assert texts, "no partial_disclosure finding_text found in apol1_panel.json"
+        for text in texts:
+            lowered = text.lower()
+            assert "low-risk if you do not" not in lowered
+            assert "gbadegesin" in lowered
