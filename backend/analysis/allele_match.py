@@ -23,14 +23,16 @@ allele-set comparison (reference strand then Watson–Crick complement) plus the
 allele frequency for the strand-ambiguous palindromes.
 
 Harmonization mirrors the canonical bigsnpr ``snp_match`` discipline (Privé 2022,
-*HGG Advances*; doi:10.1016/j.xhgg.2022.100136): match on the allele pair, allow
-an opposite-strand ``_FLIP_`` via complement, and **drop strand-ambiguous A/T &
-C/G SNPs whose minor-allele frequency is in [0.40, 0.60]** — near 0.5 the
-frequency cannot disambiguate which strand the genotype is on, so scoring it
-would be a coin flip. Away from that band a palindromic **homozygote** is still
-strand-unknowable for a *single* sample (frequency-based orientation is a cohort
-technique, invalid for n=1) and is likewise dropped, while a strand-invariant
-**heterozygote** resolves to one effect-allele copy (#247).
+*HGG Advances*; doi:10.1016/j.xhgg.2022.100136): match on the allele pair and
+allow an opposite-strand ``_FLIP_`` via complement. For strand-ambiguous A/T &
+C/G palindromes, per-sample resolution is **purely by zygosity** (#247, #353): a
+**heterozygote** is strand-invariant (the same allele set on either strand) and
+always resolves to one effect-allele copy at **any** MAF; a **homozygote** is
+strand-unknowable for a *single* sample (an opposite-strand ``AA`` is the
+complement ``TT``) and is always dropped. Frequency-based strand orientation is a
+**cohort** technique, invalid for n=1, so the bigsnpr near-0.5 [0.40, 0.60] drop
+band does not apply to per-sample scoring here — it remains the cohort rule in
+``prs_calibration`` (which estimates a population allele frequency).
 
 The genotype is treated as ground truth and never flipped; it is the foreign
 weight-set allele frame that we resolve *into* the chip's representation, so
@@ -51,8 +53,8 @@ MATCHED_REF = "matched_ref"
 MATCHED_FLIP = "matched_flip"
 #: Genotype is a no-call / unscoreable (see :func:`backend.analysis.zygosity.is_no_call`).
 NO_CALL = "no_call"
-#: Strand-ambiguous palindrome dropped — A/T or C/G near MAF 0.5 (bigsnpr rule), or a
-#: palindromic homozygote away from 0.5 (strand unknowable for a single sample, #247).
+#: Strand-ambiguous palindrome dropped — a palindromic A/T or C/G *homozygote*,
+#: which is strand-unknowable for a single sample at any MAF (#247, #353).
 AMBIGUOUS_DROPPED = "ambiguous_dropped"
 #: Alleles fit neither the reference pair nor its complement (different/triallelic variant).
 UNRESOLVED = "unresolved"
@@ -106,9 +108,6 @@ def match_effect_allele_dosage(
     effect_allele: str,
     other_allele: str | None,
     maf: float | None,
-    *,
-    ambiguous_maf_low: float = AMBIGUOUS_MAF_LOW,
-    ambiguous_maf_high: float = AMBIGUOUS_MAF_HIGH,
 ) -> AlleleMatch:
     """Resolve effect-allele dosage with strand harmonization (for PRS scoring).
 
@@ -118,10 +117,14 @@ def match_effect_allele_dosage(
       harmonization. The ``{effect, other}`` pair is matched against the observed
       alleles on the reference strand, then on the complemented strand (flipping
       the effect allele). Strand-ambiguous palindromes (``other == complement(
-      effect)``) near MAF 0.5 are dropped per the bigsnpr rule; away from 0.5 a
-      heterozygote (strand-invariant) resolves to dosage 1 while a homozygote
-      (strand-ambiguous for a single sample) is dropped — never taken at ``+``
-      strand face value, since frequency cannot orient one genotype's strand (#247).
+      effect)``) resolution is purely by **zygosity**, not MAF (#247, #353): a
+      heterozygote (strand-invariant — one effect copy on either strand) always
+      resolves to dosage 1, while a homozygote (strand-ambiguous for a single
+      sample, an opposite-strand ``AA`` being the complement ``TT``) is always
+      dropped — never taken at ``+`` strand face value. Per-sample frequency cannot
+      orient one genotype's strand (a cohort technique, invalid for n=1), so the
+      near-0.5 drop band that only ever discarded recoverable heterozygotes no
+      longer applies here (it remains the cohort rule in ``prs_calibration``).
 
     - **Without ``other_allele``** (legacy curated weights, e.g. the four
       hand-curated cancer scores): a strict back-compatible literal count — the
@@ -134,9 +137,9 @@ def match_effect_allele_dosage(
         genotype: Two-char (or haploid one-char) genotype string, or None.
         effect_allele: The allele the weight is expressed for.
         other_allele: The non-effect allele of the SNP, or None if unknown.
-        maf: gnomAD allele frequency for the SNP (any-allele; only its distance
-            from 0.5 matters), or None if unavailable.
-        ambiguous_maf_low / ambiguous_maf_high: drop band for palindromes.
+        maf: gnomAD allele frequency for the SNP. Used only to gate palindromes:
+            when None, a palindrome is dropped (MISSING_FREQ) so curated anchor
+            sets (metabolic_prs) keep their conservative no-frequency discipline.
 
     Returns:
         An :class:`AlleleMatch`.
@@ -169,21 +172,20 @@ def match_effect_allele_dosage(
 
     # ── Palindrome handling (A/T or C/G): the locus is strand-ambiguous.
     if oa == COMPLEMENT[ea]:
-        # With no MAF we cannot place the SNP relative to the drop band → drop.
+        # With no MAF, drop — keeps curated anchor sets (metabolic_prs, maf=None)
+        # conservatively dropping palindromes with no frequency context.
         if maf is None:
             return AlleleMatch(None, MISSING_FREQ, "n/a")
-        # The drop band is symmetric around 0.5, so testing the raw frequency
-        # against [low, high] is equivalent to min(af, 1-af) >= low.
-        if ambiguous_maf_low <= maf <= ambiguous_maf_high:
-            return AlleleMatch(None, AMBIGUOUS_DROPPED, "n/a")
-        # Away from 0.5, a palindromic genotype still reads as the same allele set
-        # on either strand, so resolution depends on ZYGOSITY, not on taking the +
-        # strand at face value (#247): a HETEROZYGOTE is strand-invariant — exactly
-        # one effect-allele copy either way — and resolves to dosage 1; a HOMOZYGOTE
-        # is strand-ambiguous for a single sample (an opposite-strand "AA" is the
-        # complement "TT"), so it is dropped. Allele frequency cannot orient one
-        # genotype's strand — that is a cohort technique, invalid for n=1 (Deelen
-        # 2014), the same discipline the metabolic anchors use (#138).
+        # A palindromic genotype reads as the same allele set on either strand, so
+        # resolution depends on ZYGOSITY, not on MAF (#247, #353): a HETEROZYGOTE is
+        # strand-invariant — exactly one effect-allele copy either way — and resolves
+        # to dosage 1 at ANY MAF (including the near-0.5 band, where it remains
+        # recoverable); a HOMOZYGOTE is strand-ambiguous for a single sample (an
+        # opposite-strand "AA" is the complement "TT"), so it is dropped at any MAF.
+        # Allele frequency cannot orient one genotype's strand — that is a cohort
+        # technique, invalid for n=1 (Deelen 2014); the bigsnpr near-0.5 drop band
+        # only ever discarded recoverable heterozygotes here, so it no longer applies
+        # (it stays the cohort rule in prs_calibration).
         if not alleles <= {ea, oa}:
             return AlleleMatch(None, UNRESOLVED, "n/a")
         if len(alleles) == 2:
