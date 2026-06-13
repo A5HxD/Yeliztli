@@ -31,30 +31,83 @@ const CATEGORY_DOT: Record<PathwayLevel, string> = {
   Standard: "bg-emerald-500",
 }
 
-/** HLA proxy confidence badge showing r-squared and ancestry. */
+/**
+ * Per-population r² for an HLA-proxy SNP. The clean source is the runtime
+ * lookup (`hla_proxy_lookup.r_squared_by_pop`); fall back to the panel block's
+ * `r_squared_by_population` or legacy `r_squared_<pop>` keys. Returns {} when no
+ * r² is available so the badge can render the allele without a (NaN) r².
+ */
+function rSquaredByPop(snp: SNPDetail): Record<string, number> {
+  // Single sanitization point: only finite numbers enter the map (typeof NaN is
+  // "number", so an unvalidated `r_squared_*: NaN` from any source would
+  // otherwise survive and render as "NaN"). Sources are tried in priority order;
+  // the first that yields at least one finite r² wins.
+  const collect = (source: Record<string, unknown> | undefined): Record<string, number> => {
+    const out: Record<string, number> = {}
+    for (const [pop, value] of Object.entries(source ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) out[pop] = value
+    }
+    return out
+  }
+
+  const fromLookup = collect(snp.hla_proxy_lookup?.r_squared_by_pop)
+  if (Object.keys(fromLookup).length > 0) return fromLookup
+
+  const block = snp.hla_proxy
+  if (!block) return {}
+
+  const fromBlockMap = collect(block.r_squared_by_population)
+  if (Object.keys(fromBlockMap).length > 0) return fromBlockMap
+
+  // Legacy `r_squared_<pop>` keys (e.g. `r_squared_eur`).
+  const fromLegacy: Record<string, number> = {}
+  for (const [key, value] of Object.entries(block)) {
+    const match = /^r_squared_([a-z]+)$/.exec(key)
+    if (match && typeof value === "number" && Number.isFinite(value)) {
+      fromLegacy[match[1].toUpperCase()] = value
+    }
+  }
+  return fromLegacy
+}
+
+/** HLA proxy confidence badge showing the (min) per-population r² and ancestries. */
 function HLAProxyBadge({ snp }: { snp: SNPDetail }) {
   if (!snp.hla_proxy) return null
 
-  const r2 = snp.hla_proxy.r_squared
-  const pop = snp.hla_proxy.ancestry_pop
   const allele = snp.hla_proxy.hla_allele
+  const byPop = rSquaredByPop(snp)
+  // Defense-in-depth: rSquaredByPop already drops non-finite values, but guard
+  // here too so the badge can never compute (or render) a NaN min.
+  const pops = Object.keys(byPop)
+    .filter((p) => Number.isFinite(byPop[p]))
+    .sort()
+  // Conservative (non-exclusionary): show the lowest r² across populations.
+  const minR2 = pops.length > 0 ? Math.min(...pops.map((p) => byPop[p])) : null
 
-  // Color based on r² strength
+  // Color based on r² strength (neutral when no r² is available).
   const r2Color =
-    r2 >= 0.9
-      ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700"
-      : r2 >= 0.7
-        ? "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700"
-        : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700"
+    minR2 === null
+      ? "bg-muted text-muted-foreground border-border"
+      : minR2 >= 0.9
+        ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700"
+        : minR2 >= 0.7
+          ? "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700"
+          : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700"
 
   return (
     <div className={cn("inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium", r2Color)}>
       <Shield className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>HLA Proxy: {allele}</span>
-      <span className="opacity-75">|</span>
-      <span>r²={r2.toFixed(2)}</span>
-      <span className="opacity-75">|</span>
-      <span>{pop}</span>
+      {minR2 !== null && (
+        <>
+          <span className="opacity-75">|</span>
+          <span>
+            {pops.length > 1 ? "min " : ""}r²={minR2.toFixed(2)}
+          </span>
+          <span className="opacity-75">|</span>
+          <span>{pops.join(", ")}</span>
+        </>
+      )}
     </div>
   )
 }
