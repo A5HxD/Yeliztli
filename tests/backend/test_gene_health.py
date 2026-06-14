@@ -580,12 +580,18 @@ class TestSNPScoring:
         assert _score_snp(snp, "AT").category == MODERATE
         assert _score_snp(snp, "TA").category == MODERATE
 
-    def test_drd4_t_containing_genotype_is_not_curated(self, panel: GeneHealthPanel) -> None:
+    def test_drd4_t_containing_genotype_is_indeterminate(self, panel: GeneHealthPanel) -> None:
+        """DRD4 rs747302 models the C/G contrast; an observed ``CT`` carries a ``T``
+        the locus does not model, so it is withheld as Indeterminate rather than
+        silently scored Standard (which would hide a carrier as 'no effect') — #608."""
         snp = self._get_snp(panel, "rs747302")
-        result = _score_snp(snp, "CT")
-        assert result.category == STANDARD
-        assert result.present_in_sample is True
-        assert "not in curated panel definitions" in result.effect_summary
+        for gt in ("CT", "TC"):
+            result = _score_snp(snp, gt)
+            assert result.category == INDETERMINATE, gt
+            assert result.present_in_sample is True
+            assert "does not model" in result.effect_summary, gt
+        # A non-nucleotide no-call is not an unmodeled allele — it stays Standard.
+        assert _score_snp(snp, "--").category == STANDARD
 
     def test_gjb2_het_moderate(self, panel: GeneHealthPanel) -> None:
         """GJB2 35delG het (G/delG) -> Moderate."""
