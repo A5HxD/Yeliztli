@@ -31,6 +31,7 @@ from backend.db.tables import (
     auto_update_settings,
     clinvar_variants,
     database_versions,
+    download_sessions,
     reference_metadata,
     watched_variants,
 )
@@ -875,6 +876,15 @@ class TestPrecheck:
 class TestAutoUpdateToggle:
     """Step 12: get_auto_update / set_auto_update round-trip + fallback."""
 
+    @pytest.fixture(autouse=True)
+    def _setup_complete(self):
+        """Treat first-run setup as done so the suppress-during-setup guard
+        (``_first_run_setup_active``, which reads global ~/.yeliztli state) does
+        not mask the dispatch path on a clean CI runner. The guard is covered
+        hermetically in TestSuppressAutoUpdateDuringSetup."""
+        with patch("backend.db.update_manager._first_run_setup_active", return_value=False):
+            yield
+
     def test_get_falls_back_to_defaults_when_row_missing(self, reference_engine):
         # No rows in auto_update_settings — fall back to AUTO_UPDATE_DEFAULTS.
         for db_name, expected in AUTO_UPDATE_DEFAULTS.items():
@@ -1001,6 +1011,15 @@ class TestAutoUpdateToggle:
 
 
 class TestScheduledUpdateCheck:
+    @pytest.fixture(autouse=True)
+    def _setup_complete(self):
+        """Treat first-run setup as done so the suppress-during-setup guard
+        (``_first_run_setup_active``, which reads global ~/.yeliztli state) does
+        not mask the dispatch path on a clean CI runner. The guard is covered
+        hermetically in TestSuppressAutoUpdateDuringSetup."""
+        with patch("backend.db.update_manager._first_run_setup_active", return_value=False):
+            yield
+
     def test_orchestrator_skips_auto_disabled(self, reference_engine, tmp_path: Path):
         settings = _settings_for_test(tmp_path)
 
@@ -1521,3 +1540,70 @@ class TestRunVepBundleUpdateSemver:
         assert [
             ev for ev in cap_logs if ev.get("event") == "vep_bundle_metadata_version_mismatch"
         ] == []
+
+
+class TestSuppressAutoUpdateDuringSetup:
+    """``run_scheduled_update_check`` must no-op while first-run setup is active.
+
+    The scheduler runs in the Huey process; the wizard builds in the API
+    process. The in-process ``build_lock`` cannot serialize the two, so a
+    scheduled update firing mid-setup would race the wizard's build on a second
+    write connection. The guard reuses the exact ``setup/status`` predicates so
+    "setup done?" can't drift between the readiness gate and the scheduler.
+    """
+
+    _SETUP = "backend.api.routes.setup"
+    _CHECK = "backend.db.update_manager.check_all_updates"
+
+    def test_skips_when_disclaimer_not_accepted(self, db_registry):
+        with (
+            patch(self._CHECK) as check,
+            patch(f"{self._SETUP}._is_disclaimer_accepted", return_value=False),
+        ):
+            result = run_scheduled_update_check(db_registry)
+        check.assert_not_called()
+        assert result.available == []
+        assert result.up_to_date == []
+        assert result.errors == []
+
+    def test_skips_when_required_dbs_not_ready(self, db_registry):
+        with (
+            patch(self._CHECK) as check,
+            patch(f"{self._SETUP}._is_disclaimer_accepted", return_value=True),
+            patch(f"{self._SETUP}._required_dbs_ready", return_value=(False, [])),
+        ):
+            result = run_scheduled_update_check(db_registry)
+        check.assert_not_called()
+        assert result.available == []
+
+    def test_skips_when_wizard_download_in_progress(self, db_registry):
+        # Setup looks "complete", but a user-triggered wizard download is live.
+        with db_registry.reference_engine.begin() as conn:
+            conn.execute(
+                download_sessions.insert().values(session_id="sess-live", status="in_progress")
+            )
+        with (
+            patch(self._CHECK) as check,
+            patch(f"{self._SETUP}._is_disclaimer_accepted", return_value=True),
+            patch(f"{self._SETUP}._required_dbs_ready", return_value=(True, [])),
+        ):
+            result = run_scheduled_update_check(db_registry)
+        check.assert_not_called()
+        assert result.available == []
+
+    def test_runs_when_setup_complete_and_idle(self, db_registry):
+        # Positive control: a completed/interrupted session does not block, and
+        # the real update check is reached.
+        with db_registry.reference_engine.begin() as conn:
+            conn.execute(
+                download_sessions.insert().values(session_id="sess-done", status="complete")
+            )
+        sentinel = UpdateCheckResult(up_to_date=["clinvar"])
+        with (
+            patch(self._CHECK, return_value=sentinel) as check,
+            patch(f"{self._SETUP}._is_disclaimer_accepted", return_value=True),
+            patch(f"{self._SETUP}._required_dbs_ready", return_value=(True, [])),
+        ):
+            result = run_scheduled_update_check(db_registry)
+        check.assert_called_once()
+        assert result.up_to_date == ["clinvar"]
