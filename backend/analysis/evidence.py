@@ -119,8 +119,9 @@ def assign_clinvar_evidence_level(
         gene_baseline: Optional gene-level baseline evidence from curated
             panel. When provided and review stars are 0, the result is
             capped at ``min(gene_baseline, 2)``.
-        ensemble_pathogenic: Whether ≥3 in-silico tools predict
-            deleterious. Used as fallback when no ClinVar data.
+        ensemble_pathogenic: Whether >=3 independent in-silico axes predict
+            deleterious. Tracked for downstream reporting; this function
+            does not currently promote evidence level based on this flag.
 
     Returns:
         Evidence level integer (1-4).
